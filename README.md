@@ -1,5 +1,7 @@
 # JobSyncd
 
+> **Fork Note**: This is a forked version maintained by [FengmingYu-tech](https://github.com/FengmingYu-tech). Original repository: [iamfaham/JobSync](https://github.com/iamfaham/JobSync)
+
 AI-powered, intelligent automation for job application tracking using LLMs and MCPs.
 
 ## Features
