@@ -15,6 +15,14 @@ from shared.models import EmailData, JobApplicationData
 from shared.utils import get_llm_config
 from shared.config import validate_config
 
+# Try to import debug tool (optional)
+try:
+    from debug_tool import workspace
+    DEBUG_MODE = True
+except ImportError:
+    DEBUG_MODE = False
+    workspace = None
+
 # Validate configuration
 validate_config()
 
@@ -35,7 +43,7 @@ class JobSyncWorkflow:
         return [
             Tool(
                 name="get_recent_emails",
-                description="Fetch recent job application emails from Gmail. Use this to get new emails to process.",
+                description="IMPORTANT: This tool fetches REAL emails from Gmail. You MUST call this tool to get actual email data. Do NOT generate fake or example emails. The tool returns JSON with real email data including subject, sender, date, and text content. Always use the actual data returned by this tool.",
                 func=self._call_gmail_mcp,
             ),
             Tool(
@@ -72,14 +80,28 @@ class JobSyncWorkflow:
 
     def _call_gmail_mcp(self, query: str = "") -> str:
         """Call Gmail MCP to get recent emails"""
+        if DEBUG_MODE:
+            workspace.update_variable("gmail_query", query, "_call_gmail_mcp")
+            workspace.update_display()
+        
         try:
             from agent.gmail_client import list_messages, get_message, message_summary
 
-            # More specific query for job application emails (not general job postings)
-            gmail_query = "(application OR applied OR interview OR assessment OR offer OR rejection) AND (thank you OR confirmation OR scheduled OR next steps OR decision) -label:spam -label:promotions -from:noreply -from:no-reply"
+            # More flexible query for job application emails - removed strict AND requirement
+            # This will find emails with any of the job-related keywords
+            gmail_query = "(application OR applied OR interview OR assessment OR offer OR rejection OR confirmation OR scheduled) -label:spam -label:promotions"
+            
+            if DEBUG_MODE:
+                workspace.update_variable("gmail_query_final", gmail_query, "_call_gmail_mcp")
+                workspace.update_display()
+            
             msg_ids = list_messages(
                 query=gmail_query, max_results=15, newer_than_days=7
             )
+            
+            if DEBUG_MODE:
+                workspace.update_variable("msg_ids_count", len(msg_ids), "_call_gmail_mcp")
+                workspace.update_display()
 
             emails = []
             for msg_id in msg_ids:
@@ -91,17 +113,28 @@ class JobSyncWorkflow:
                         "subject": summary.get("subject", ""),
                         "sender": summary.get("from", ""),
                         "date": summary.get("date", ""),
-                        "text": summary.get("text", ""),
+                        "text": summary.get("text", "")[:2000],  # Limit text length
                         "snippet": summary.get("snippet", ""),
                     }
                 )
 
-            return f"Retrieved {len(emails)} emails from Gmail:\n" + json.dumps(
-                emails, indent=2
+            result = f"Retrieved {len(emails)} emails from Gmail:\n" + json.dumps(
+                emails, indent=2, ensure_ascii=False
             )
+            
+            if DEBUG_MODE:
+                workspace.update_variable("emails_count", len(emails), "_call_gmail_mcp")
+                workspace.update_variable("emails_data", emails[:3] if emails else [], "_call_gmail_mcp")  # 只保存前3个
+                workspace.update_display()
+            
+            return result
 
         except Exception as e:
-            return f"Error fetching emails: {str(e)}"
+            error_msg = f"Error fetching emails: {str(e)}"
+            if DEBUG_MODE:
+                workspace.update_variable("gmail_error", error_msg, "_call_gmail_mcp")
+                workspace.update_display()
+            return error_msg
 
     def _call_notion_search(self, company: str = "", job_title: str = "") -> str:
         """Call Notion MCP to search for similar entries"""
@@ -130,6 +163,12 @@ class JobSyncWorkflow:
         app_id: str = "",
     ) -> str:
         """Call Notion MCP to create new entry"""
+        if DEBUG_MODE:
+            workspace.update_variable("notion_company", company, "_call_notion_create")
+            workspace.update_variable("notion_job_title", job_title, "_call_notion_create")
+            workspace.update_variable("notion_status", status, "_call_notion_create")
+            workspace.update_display()
+        
         try:
             from agent.notion_utils import create_or_update_entry
 
@@ -142,6 +181,11 @@ class JobSyncWorkflow:
                 app_id=app_id,
             )
 
+            if DEBUG_MODE:
+                workspace.update_variable("notion_result", result, "_call_notion_create")
+                workspace.update_variable("notion_was_updated", was_updated, "_call_notion_create")
+                workspace.update_display()
+
             if result:
                 action = "Updated" if was_updated else "Created"
                 return f"{action} job application: {company} - {job_title}"
@@ -151,7 +195,11 @@ class JobSyncWorkflow:
                 )
 
         except Exception as e:
-            return f"Error creating job application: {str(e)}"
+            error_msg = f"Error creating job application: {str(e)}"
+            if DEBUG_MODE:
+                workspace.update_variable("notion_error", error_msg, "_call_notion_create")
+                workspace.update_display()
+            return error_msg
 
     def _call_notion_update(
         self, entry_id: str = "", status: str = "", notes: str = ""
@@ -190,23 +238,41 @@ class JobSyncWorkflow:
 
     async def run(self):
         """Run the LLM agent with direct tool access"""
-        print("Starting JobSync with LLM + MCP tools...")
+        if DEBUG_MODE:
+            workspace._log("Starting JobSync with LLM + MCP tools...")
+            workspace.update_display()
+        else:
+            print("Starting JobSync with LLM + MCP tools...")
 
         try:
             # Let the LLM agent handle everything
-            result = self.agent.run(
-                "Process recent job application emails and manage duplicates in the Notion database"
-            )
+            prompt = "Process recent job application emails and manage duplicates in the Notion database"
+            
+            if DEBUG_MODE:
+                workspace.update_variable("agent_prompt", prompt, "run")
+                workspace.update_display()
+            
+            result = self.agent.run(prompt)
 
-            print("\nLLM agent completed processing!")
-            print(f"Result: {result}")
+            if DEBUG_MODE:
+                workspace.update_variable("agent_result", result, "run")
+                workspace._log("LLM agent completed processing!")
+                workspace.update_display()
+            else:
+                print("\nLLM agent completed processing!")
+                print(f"Result: {result}")
+            
             return result
 
         except Exception as e:
-            print(f"Error: {e}")
-            import traceback
-
-            traceback.print_exc()
+            error_msg = f"Error: {e}"
+            if DEBUG_MODE:
+                workspace._log(f"❌ {error_msg}")
+                workspace.update_display()
+            else:
+                print(error_msg)
+                import traceback
+                traceback.print_exc()
             return None
 
 

@@ -77,6 +77,8 @@ This will:
 
 **On first run:** A browser will open for Gmail OAuth authentication. Grant permissions and the agent will save a `token.json` for future use.
 
+**Using Cursor Browser (Optional):** To use Cursor IDE's built-in browser for OAuth authentication instead of the system browser, set `USE_CURSOR_BROWSER=true` environment variable. See [`CURSOR_BROWSER_SETUP.md`](./CURSOR_BROWSER_SETUP.md) for detailed instructions.
+
 **Prerequisites:**
 
 - You need to download `credentials.json` from Google Cloud Console and place it in the `agent/` folder
